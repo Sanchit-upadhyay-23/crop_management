@@ -3,7 +3,7 @@ import jwt
 import os
 from sqlalchemy import create_engine, text
 from flask import request, jsonify
-engine = create_engine("postgresql+psycopg2://postgres:sanchit@localhost:5432/postgres")
+engine = create_engine("postgresql+psycopg2://sanchit:sanchit@localhost:5432/postgres")
 secret_key = os.getenv("SECRET_KEY", None)
 
 def generate_token(payload, secret_key):

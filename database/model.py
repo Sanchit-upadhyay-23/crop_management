@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 
 # Create an in-memory SQLite database engine
-engine = create_engine('postgresql+psycopg2://postgres:sanchit@localhost:5432/postgres')
+engine = create_engine('postgresql+psycopg2://sanchit:sanchit@localhost:5432/postgres')
 
 # Define Table Classes
 Base = declarative_base()
