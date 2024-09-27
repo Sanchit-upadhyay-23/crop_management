@@ -4,9 +4,13 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-flask = *
-
-[dev-packages]
+flask = "*"
+sqlalchemy = "*"
+flask-bcrypt = "*"
+jwt = "*"
+psycopg2 = "*"
 
 [requires]
-python_version = "3.12"
+python_version = "3.9"
+
+[dev-packages]
