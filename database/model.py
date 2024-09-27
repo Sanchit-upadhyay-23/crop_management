@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, VARCHAR, FLOAT, TIMESTAMP, DateTime, text
+from sqlalchemy import create_engine, Column, Integer, VARCHAR, FLOAT, TIMESTAMP, DateTime, text, Enum
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 
@@ -41,7 +41,6 @@ class inventory_history(Base):
     room_id = Column(Integer, nullable=False)
     quantity = Column(Integer, nullable=False)
     quantity_unit = Column(VARCHAR(64), nullable=False)
-    total_quantity = Column(FLOAT, nullable=False)
     created_at = Column(DateTime(timezone=True), default=func.now(), server_default=text('NOW()'))
     last_updated = Column(DateTime(timezone=True), default=func.now(), server_default=text('NOW()'), onupdate=func.current_timestamp())
 
@@ -52,7 +51,7 @@ class users(Base):
     user_id = Column(VARCHAR(255), primary_key=True)
     username = Column(VARCHAR(64), nullable=False)
     password = Column(VARCHAR(64), nullable=False)
-    user_type = Column(VARCHAR(64), nullable=False)
+    user_type = Column(Enum('admin','farmer','seller', name='status_enum'), nullable=False)
     email = Column(VARCHAR(64), nullable=False)
     mobile_number = Column(VARCHAR(64), nullable=False)
 
@@ -61,7 +60,11 @@ class crop_dashboard(Base):
     __table_args__ = {'schema': 'public'}
 
     crop_name = Column(VARCHAR(64), primary_key=True)
+    crop_tpye = Column(VARCHAR(64))
+    crop_quality = Column(Enum('graded','non_graded', name='status_enum'), nullable=False)
     quantity = Column(Integer, nullable=False)
+    crop_production_time = Column(VARCHAR(64))
+    crop_expairy = Column(VARCHAR(64))
     quantity_unit = Column(VARCHAR(64), nullable=False)
     selling_price = Column(FLOAT, nullable=False)
     created_at = Column(DateTime(timezone=True), default=func.now(), server_default=text('NOW()'))

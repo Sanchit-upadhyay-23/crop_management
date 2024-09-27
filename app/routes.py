@@ -1,14 +1,18 @@
 from app import app
-
-from flask import Flask, request
+from functools import wraps
+import jwt
+from flask import Flask, request, jsonify
 import json
 import traceback
 from sqlalchemy import create_engine, text
 from utils.helper import user_creation_validator
 from flask_bcrypt import Bcrypt
+import os
+from auth.authorization import authorize, generate_token
 
 bcrypt = Bcrypt()
 engine = create_engine("postgresql+psycopg2://postgres:sanchit@localhost:5432/postgres")
+secret_key = os.getenv("SECRET_KEY", None)
 
 @app.route("/welcome")
 def welcome():
@@ -27,7 +31,7 @@ def execute_query(engine, query, params=None):
         print(traceback.format_exc())
     return result
 
-@app.route("/get_all_crops", methods = ["GET"])
+@app.route("/get_all_crop", methods = ["GET"])
 def get_all_crops():
     query = text(f"select * from crop_inventory")
     crop_data = []
@@ -84,6 +88,7 @@ def put_crop_stock():
     return f"Data succesfully added {data}"
 
 @app.route("/update_inventory", methods = ['POST'])
+@authorize
 def update_inventory():
     payload = request.get_json(silent=True) #payload contains list of 
     
@@ -154,10 +159,14 @@ def login():
     if not check:
         return ("Invalid UserID or Password"),404
     else:
-        return ("login successfull"),200
+        success_response = {
+            "result" : "success",
+            "status_code" : 200,
+            "token" : generate_token(payload, secret_key)
+        }
+        return success_response
     
 @app.route("/crop_dashboard", methods = ['POST'])
-@authorise
 def crop_dashboard():
     data = request.get_json(silent=True)
     for items in data["data"]:
@@ -180,4 +189,54 @@ def crop_dashboard():
     
         # else:
         #     return ("Failed to access and update crop_dashboard")
-    
+
+def generate_token(payload, secret_key):
+    #payload = {
+        #"user_id": "sanchit_23", 
+        #"password": "Sanchit23@"
+    #'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)  
+            # }
+    token = jwt.encode(payload, secret_key, algorithm='HS256')
+    print("Generated Token:", token)
+    return token
+
+def validate_token(token):
+        decoded_payload = jwt.decode(token, secret_key, algorithms=['HS256'])
+        user_id = decoded_payload.get('user_id')
+        print(f"Token is valid. User ID: {user_id}")
+
+# is_valid = validate_token(token, secret_key)
+# print("Is the token valid?", is_valid)
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+
+        # Check if the token is provided in the headers
+        if 'Authorization' in request.headers:
+            token = request.headers['Authorization'].split(" ")[1]
+
+        if not token:
+            return jsonify({'message': 'Token is missing!'}), 403
+
+        try:
+            # Decode the token
+            decoded = jwt.decode(token, secret_key, algorithms=['HS256'])
+            # You can add more checks here (e.g., user roles, etc.)
+        except jwt.ExpiredSignatureError:
+            return jsonify({'message': 'Token has expired!'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'message': 'Invalid token!'}), 401
+
+        return f(*args, **kwargs)
+
+    return decorated #return decorated allows the decorator to replace the original function with the wrapper function that contains the added behavior.
+
+@app.route("/testing_auth", methods = ["GET"])
+@authorize
+def testing():
+    return f"Successful authentication"
+
+
+
