@@ -14,7 +14,6 @@ def generate_token(payload, secret_key):
     print("Generated Token:", token)
     return token
 
-
 def authorize(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -44,13 +43,6 @@ def authorize(f):
     return decorated #return decorated allows the decorator to replace the original function with the wrapper function that contains the added behavior.
 
 
-# @app.route('/protected', methods=['GET'])
-# @authorize
-# def protected_route():
-#     return jsonify({'message': 'This is a protected route!'})
-#curl -H "Authorization: Bearer <your_token>" http://127.0.0.1:5000/protected
-# is_valid = validate_token(token, secret_key)
-# print("Is the token valid?", is_valid)
 
 
 

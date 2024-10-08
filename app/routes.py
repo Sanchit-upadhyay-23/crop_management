@@ -1,5 +1,6 @@
 from app import app
 from functools import wraps
+from datetime import datetime
 import jwt
 from flask import Flask, request, jsonify
 import json
@@ -9,6 +10,9 @@ from utils.helper import user_creation_validator
 from flask_bcrypt import Bcrypt
 import os
 from auth.authorization import authorize, generate_token
+from utils.helper import check_hash, generate_hash, execute_query
+import hashlib
+
 
 bcrypt = Bcrypt()
 engine = create_engine("postgresql+psycopg2://sanchit:sanchit@localhost:5432/postgres")
@@ -16,79 +20,83 @@ secret_key = os.getenv("SECRET_KEY", None)
 
 @app.route("/welcome")
 def welcome():
-    return "crop management system"
+    return "fmgc management system"
 
-def execute_query(engine, query, params=None):
-    if type(query) == str:
-        query = text(query)
-    result = []
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(query, params)
-            conn.commit()
-    except Exception as e:
-        print(f"Exception while executing postgres query, message:{str(e)}")
-        print(traceback.format_exc())
-    return result
-
-@app.route("/get_all_crop", methods = ["GET"])
+@app.route("/get_inventory_admin", methods = ["GET"])
 def get_all_crops():
-    query = text(f"select * from crop_inventory")
-    crop_data = []
+    query = text(f"select * from trace_inventory")
+    inventory_data = []
     with engine.connect() as conn:
         result = conn.execute(query)
         conn.commit()
     for item in result.mappings():# sqlalchemy method which giveds mapping of the rows to the columns because this query will give the rows in a without mapped with column. 
-        crop_data.append(dict(item))
-    return crop_data, 200
+        inventory_data.append(dict(item))
+    return inventory_data, 200
 
-@app.route("/get_specific_crops", methods = ['POST'])
-def get_specific_crops():
-    data = request.get_json(silent=True)
-    name = data["name"]
-    query = text(f"select * from public.current_crop_inventory where crop_name = '{name}'")
+@app.route("/get_specific_product_details", methods = ['GET'])
+def get_specific_product_details():
+    payload = request.get_json(silent=True)
+    data = payload['data']
+    
+    name = data[0]['product_name']
+    type = data[0]['product_type']
+    query = text(f"select product_name, product_type, brand, product_quantity, quantity_unit, mfg_date, exp_date, selling_price from trace_inventory where product_name = '{name}' and product_type = '{type}' ")
     print(str(query))
-    crop_data = []
+    product_data = []
     with engine.connect() as con:
         result = con.execute(query)
         con.commit()
     for item in result.mappings():
-        crop_data.append(dict(item))
-    print(crop_data)
-    return json.dumps(crop_data)
+        product_data.append(dict(item))
+    print(product_data)
+    return json.dumps(product_data)
 
-@app.route("/add_crops", methods = ["POST"])
-def add_crops():
-    payload = request.get_json(silent=True)
-    crop_data = payload["data"]
-    for item in crop_data:
-        columns, values = tuple(item.keys()), tuple(item.values())
-        columns = str(columns).replace("'", "")
-        query = text(f"insert into crop_inventory {columns} values {values}")
-        execute_query(engine, query=query, params=item)
-    
-    return {"msg": "Crops added sucessfully"}, 201
 
-@app.route("/add_crop_stocks", methods = ['POST'])
-def put_crop_stock():
+@app.route("/add_trace_inventory", methods = ['POST'])
+#@authorize
+def add_trace_inventory():
     data = request.get_json(silent=True)
     for item in data["data"]:
-        items = {
-            "crop_name" : item["name"],
-            "room_id" : item["room"],
-            "quantity" : item["quantity"],
-            "current_price" : item["price"]
-        }
-        columns, values = tuple(items.keys()), tuple(items.values())
-        columns = str(columns).replace("'", "")
-        query = text(f"insert into public.current_crop_inventory {columns} VALUES {values}")
-        with engine.connect() as con:
-            result = con.execute(query)
-    con.commit()
-    return f"Data succesfully added {data}"
+        pro_id, exist = check_hash(**item)
+        if exist:
+            select_query = text(f"select total_quantity from trace_inventory where product_id = '{pro_id}'")
+            result = execute_query(engine, query=select_query)
+            total_quantity = result.fetchone()[0]
+            if item["operation"].lower() == 'buy': #buy = reduce inventory
+                if item['total_quantity'] > total_quantity:
+                    return f" we only have {total_quantity} quantity of this product but you have requested for {item['total_quantity']} quantity "
+                update_query = text(f"update trace_inventory set total_quantity = total_quantity - {int(item['total_quantity'])}, last_updated = '{datetime.now()}' where product_id = '{pro_id}' ;")
+            else:
+                update_query = text(f"update trace_inventory set total_quantity = total_quantity + {int(item['total_quantity'])}, last_updated = '{datetime.now()}' where product_id = '{pro_id}' ;")
+
+            # if int(item['total_quantiy']) > total_quantity:
+            #     response = f"Requested Quantity {item['total_quantity']} is not available. Available Quanity : {total_quantity}"
+            #     return response, 404
+        else:
+            if item["operation"].lower() == 'buy':
+                return f" {item['product_name']} {item['product_type']} is not available "
+            else:
+                items = {
+                    "product_id" : generate_hash(**item),
+                    "product_name" : item["product_name"],
+                    "product_type" : item["product_type"],
+                    "brand" : item["brand"],
+                    "product_quantity" : item["product_quantity"],
+                    "quantity_unit" : item["quantity_unit"],
+                    "mfg_date" : item["mfg_date"],
+                    "exp_date" : item["exp_date"],
+                    "total_quantity" : item["total_quantity"],
+                    "buying_price" : item["buying_price"],
+                    "selling_price" : item["selling_price"]
+                }
+                columns, values = tuple(items.keys()), tuple(items.values())
+                columns = str(columns).replace("'", "")
+                update_query = text(f"insert into trace_inventory {columns} VALUES {values}")
+        execute_query(engine, query=update_query)
+    return f" thanks for your love", 201
 
 @app.route("/update_inventory", methods = ['POST'])
-@authorize
+
 def update_inventory():
     payload = request.get_json(silent=True) #payload contains list of 
     
@@ -104,44 +112,46 @@ def update_inventory():
         query = text(f" update current_crop_inventory set quantity = quantity + :quantity where crop_name= :crop_name returning quantity;")
 
     try:
-        with engine.connect() as con:
+        with engine.connect() as con: 
             result = con.execute(query,params)
             result=result.fetchone()
             con.commit()
     except Exception as e:
         print('Exception while executing postgres query, message: ',str(e))
-
-    
-    
     return f"Quantity has been updated by operation {operation.lower()} in {quantity} quntity for crop name: {crop_name} now updated quantity is {result[0]}",200
     
 @app.route("/register", methods = ["POST"])
 def register():
     payload = request.get_json(silent=True)
-    user_id = payload["user_id"]
-    username = payload["username"]
-    payload["password"] = bcrypt.generate_password_hash(payload["password"]).decode('utf-8')
+    #username = payload["username"]
+    payload['password'] = bcrypt.generate_password_hash(payload['password']).decode('utf-8')
     nulls = user_creation_validator(payload)
     if nulls:
         return f"Please provide {nulls.keys()} entry !!", 400
-    
+
+    hash_id = '' 
+    hash_id == hash_id + payload['username']
+    hash_id == hash_id + payload['user_type']
+    hash_id == hash_id + payload['password']
+    user_id = hashlib.md5(str(hash_id).encode()).hexdigest()
+
     existing_user = None
     check_user_query = text(f"Select * from users where user_id = '{user_id}'")
     with engine.connect() as con:
         check_user_result = con.execute(check_user_query)
         con.commit()
     for item in check_user_result.mappings():
-        existing_user = dict(item)["username"]
+        existing_user = dict(item)["username"] # to convert sql alchemy object into dictionary and extract value of username from it.
     if existing_user:
-        return f"User already exists {username} !!", 400 
-    
+        return f"User already exists {payload['username']} !!", 400 
+    payload['user_id']=user_id
     columns, values = tuple(payload.keys()), tuple(payload.values())
     columns = str(columns).replace("'", "") # removing single quotes from columns list converting it to string since writing insert query there should'nt be quotes in columns string
     query = text(f"insert into users {columns} values {values}")
     with engine.connect() as con:
         result = con.execute(query)
         con.commit()
-    return f"User {username} is registered successfully", 201
+    return f"User {payload['username']} is registered successfully", 201
 
 @app.route("/login", methods = ["GET"])
 def login():
@@ -166,29 +176,6 @@ def login():
         }
         return success_response
     
-@app.route("/crop_dashboard", methods = ['POST'])
-def crop_dashboard():
-    data = request.get_json(silent=True)
-    for items in data["data"]:
-        # login_api_url = 'http://127.0.0.1:5000/login'
-        # response = request.get(login_api_url)
-        # if response.status_code == 200:
-        items = {
-            "crop_name" : items["name"],
-            "quantity" : items["quantity"],
-            "quantity_unit" : items["quantity_unit"],
-            "selling_price" : items["selling_price"]
-        }
-        columns, values = tuple(items.keys()), tuple(items.values())
-        columns = str(columns).replace("'", "")
-        query = text(f"insert into public.crop_dashboard {columns} VALUES {values}")
-        with engine.connect() as con:
-            result = con.execute(query)
-        con.commit()
-        return f"Data succesfully added {data}"
-    
-        # else:
-        #     return ("Failed to access and update crop_dashboard")
 
 def generate_token(payload, secret_key):
     #payload = {
@@ -202,6 +189,9 @@ def generate_token(payload, secret_key):
 
 def validate_token(token):
         decoded_payload = jwt.decode(token, secret_key, algorithms=['HS256'])
+        query = text(f"select user_id from users where user_id = :user_id")
+        with engine.connect() as con:
+            result = con.execute(query, payload)
         user_id = decoded_payload.get('user_id')
         print(f"Token is valid. User ID: {user_id}")
 
@@ -232,11 +222,6 @@ def token_required(f):
         return f(*args, **kwargs)
 
     return decorated #return decorated allows the decorator to replace the original function with the wrapper function that contains the added behavior.
-
-@app.route("/testing_auth", methods = ["GET"])
-@authorize
-def testing():
-    return f"Successful authentication"
 
 
 
